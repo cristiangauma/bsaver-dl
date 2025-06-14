@@ -1,0 +1,446 @@
+#!/usr/bin/env python3
+"""
+BeatSaver Playlist Downloader - Smart Entry Point
+
+This script automatically handles installation and execution:
+- If virtual environment exists: activate it and run the command
+- If virtual environment doesn't exist: install first, then run
+
+Usage:
+    ./bsaver-dl playlist.bplist [options]
+    python3 bsaver-dl playlist.bplist [options]
+    ./bsaver-dl --install                    # Force install/reinstall
+    ./bsaver-dl --clean                      # Clean up virtual environment
+"""
+
+import os
+import sys
+import subprocess
+import platform
+import argparse
+from pathlib import Path
+
+
+def get_script_dir():
+    """Get the directory where this script is located.
+    
+    Returns the absolute path to the directory containing this script,
+    which is used as the base directory for finding other components
+    like the virtual environment and setup files.
+    
+    Returns:
+        Path: Absolute path to the script's directory.
+        
+    Example:
+        >>> script_dir = get_script_dir()
+        >>> print(script_dir)
+        /path/to/bsaver-dl-directory
+    """
+    return Path(__file__).parent.resolve()
+
+
+def get_venv_paths():
+    """Get virtual environment paths for the current platform.
+    
+    Determines the correct paths for virtual environment components
+    based on the operating system. Windows uses Scripts/ subdirectory
+    while Unix-like systems use bin/ subdirectory.
+    
+    Returns:
+        Tuple[Path, Path, Path]: A tuple containing:
+            - Path: Virtual environment directory
+            - Path: Python executable path
+            - Path: Activation script path
+            
+    Note:
+        Paths are returned regardless of whether they actually exist.
+        Use check_installation() to verify if the environment is set up.
+        
+    Example:
+        >>> venv_dir, python_exe, activate_script = get_venv_paths()
+        >>> print(f"Python at: {python_exe}")
+    """
+    script_dir = get_script_dir()
+    venv_dir = script_dir / "venv"
+    
+    if platform.system() == "Windows":
+        python_exe = venv_dir / "Scripts" / "python.exe"
+        activate_script = venv_dir / "Scripts" / "activate.bat"
+    else:
+        python_exe = venv_dir / "bin" / "python"
+        activate_script = venv_dir / "bin" / "activate"
+    
+    return venv_dir, python_exe, activate_script
+
+
+def print_colored(message, color_code="0"):
+    """Print colored message if terminal supports it.
+    
+    Outputs colored text using ANSI escape codes when the terminal
+    supports it and is not Windows. Falls back to plain text otherwise.
+    
+    Args:
+        message (str): The message to print.
+        color_code (str): ANSI color code (default: "0" for default color).
+            Common codes: "91" (red), "92" (green), "93" (yellow), 
+            "94" (blue), "96" (cyan).
+            
+    Returns:
+        None
+        
+    Note:
+        Color output is automatically disabled on Windows or when
+        output is redirected to a file or pipe.
+        
+    Example:
+        >>> print_colored("Success!", "92")  # Green text
+        >>> print_colored("Error!", "91")    # Red text
+    """
+    if sys.stdout.isatty() and platform.system() != "Windows":
+        print(f"\033[{color_code}m{message}\033[0m")
+    else:
+        print(message)
+
+
+def check_installation():
+    """Check if the virtual environment and package are installed.
+    
+    Verifies that both the virtual environment exists and the bsaver_dl
+    package is properly installed within it by attempting to import
+    the package using the virtual environment's Python interpreter.
+    
+    Returns:
+        bool: True if installation is complete and functional, False otherwise.
+        
+    Note:
+        This function performs an actual import test rather than just
+        checking for file existence to ensure the installation is working.
+        
+    Example:
+        >>> if not check_installation():
+        ...     print("Need to install first")
+    """
+    venv_dir, python_exe, _ = get_venv_paths()
+    
+    if not venv_dir.exists() or not python_exe.exists():
+        return False
+    
+    # Check if the package is installed by trying to import it
+    try:
+        result = subprocess.run(
+            [str(python_exe), "-c", "import bsaver_dl"],
+            capture_output=True,
+            text=True
+        )
+        return result.returncode == 0
+    except:
+        return False
+
+
+def run_installation():
+    """Run the installation process using the setup script.
+    
+    Executes the installation script located at setup/install.py,
+    handling directory changes and providing user feedback. Exits
+    the program if installation fails or is interrupted.
+    
+    Returns:
+        None
+        
+    Raises:
+        SystemExit: Exits with code 1 if installation fails or is cancelled.
+        
+    Note:
+        This function changes the working directory temporarily to ensure
+        the installation script runs in the correct context, then restores
+        the original working directory.
+        
+    Example:
+        >>> run_installation()  # Installs and exits on failure
+    """
+    script_dir = get_script_dir()
+    install_script = script_dir / "setup" / "install.py"
+    
+    if not install_script.exists():
+        print_colored("❌ Error: Installation script not found at setup/install.py", "91")
+        sys.exit(1)
+    
+    print_colored("🔧 Installing virtual environment and dependencies...", "94")
+    print()
+    
+    # Change to script directory and run install
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(script_dir)
+        result = subprocess.run([sys.executable, "setup/install.py"], check=True)
+        if result.returncode != 0:
+            sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print_colored(f"❌ Installation failed: {e}", "91")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print_colored("\n❌ Installation cancelled by user", "91")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def run_cleanup():
+    """Run the cleanup process using the setup script.
+    
+    Executes the cleanup functionality of the installation script to
+    remove the virtual environment and uninstall the package. Handles
+    directory changes and provides user feedback.
+    
+    Returns:
+        None
+        
+    Raises:
+        SystemExit: Exits with code 1 if cleanup fails or is cancelled.
+        
+    Note:
+        This function changes the working directory temporarily to ensure
+        the cleanup script runs in the correct context, then restores
+        the original working directory.
+        
+    Example:
+        >>> run_cleanup()  # Removes installation and exits on failure
+    """
+    script_dir = get_script_dir()
+    install_script = script_dir / "setup" / "install.py"
+    
+    if not install_script.exists():
+        print_colored("❌ Error: Installation script not found at setup/install.py", "91")
+        sys.exit(1)
+    
+    print_colored("🧹 Cleaning up virtual environment...", "94")
+    print()
+    
+    # Change to script directory and run cleanup
+    original_cwd = os.getcwd()
+    try:
+        os.chdir(script_dir)
+        result = subprocess.run([sys.executable, "setup/install.py", "--clean"], check=True)
+        if result.returncode != 0:
+            sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print_colored(f"❌ Cleanup failed: {e}", "91")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print_colored("\n❌ Cleanup cancelled by user", "91")
+        sys.exit(1)
+    finally:
+        os.chdir(original_cwd)
+
+
+def run_command(args):
+    """Run the bsaver-dl command with the given arguments.
+    
+    Executes the main bsaver_dl module using the virtual environment's
+    Python interpreter, passing through all provided arguments. Handles
+    user interruption and error reporting gracefully.
+    
+    Args:
+        args (List[str]): Command line arguments to pass to the bsaver_dl module.
+        
+    Returns:
+        None (function exits the program)
+        
+    Raises:
+        SystemExit: Always exits with the return code from the subprocess,
+            130 for user interruption, or 1 for unexpected errors.
+            
+    Note:
+        This function never returns normally - it always exits the program
+        with the appropriate exit code from the subprocess.
+        
+    Example:
+        >>> run_command(["playlist.bplist", "-v", "--output", "./downloads"])
+    """
+    venv_dir, python_exe, _ = get_venv_paths()
+    
+    if not python_exe.exists():
+        print_colored("❌ Error: Python executable not found in virtual environment", "91")
+        sys.exit(1)
+    
+    # Run the command using the virtual environment's Python
+    try:
+        cmd = [str(python_exe), "-m", "bsaver_dl"] + args
+        result = subprocess.run(cmd)
+        sys.exit(result.returncode)
+    except KeyboardInterrupt:
+        print_colored("\n⏹️  Operation cancelled by user", "93")
+        sys.exit(130)
+    except Exception as e:
+        print_colored(f"❌ Error running command: {e}", "91")
+        sys.exit(1)
+
+
+def parse_args():
+    """Parse command line arguments for the smart entry point.
+    
+    Parses arguments specific to the entry point script (install, clean, help)
+    while allowing unknown arguments to pass through to the main application.
+    This enables the script to handle both management commands and regular
+    application arguments.
+    
+    Returns:
+        Tuple[argparse.Namespace, List[str]]: A tuple containing:
+            - Namespace: Parsed known arguments (install, clean, help flags)
+            - List[str]: Unknown arguments to pass through to main application
+            
+    Note:
+        Uses parse_known_args() to allow unknown arguments to pass through
+        without causing errors. This enables transparent argument forwarding.
+        
+    Example:
+        >>> known, unknown = parse_args()
+        >>> if known.install:
+        ...     run_installation()
+        >>> else:
+        ...     run_command(unknown)
+    """
+    parser = argparse.ArgumentParser(
+        description="BeatSaver Playlist Downloader - Smart Entry Point",
+        add_help=False  # We'll handle help ourselves
+    )
+    
+    parser.add_argument("--install", action="store_true", 
+                       help="Force install/reinstall virtual environment and dependencies")
+    parser.add_argument("--clean", action="store_true",
+                       help="Remove virtual environment and clean up")
+    parser.add_argument("--help", "-h", action="store_true",
+                       help="Show help message")
+    
+    # Parse known args to handle our special flags, but allow unknown args to pass through
+    known_args, unknown_args = parser.parse_known_args()
+    
+    return known_args, unknown_args
+
+
+def show_help():
+    """Show help information for the bsaver-dl command.
+    
+    Displays comprehensive usage information including basic usage patterns,
+    management commands, and references to additional help. Uses colored
+    output when available for better readability.
+    
+    Returns:
+        None
+        
+    Note:
+        This function provides help for the entry point script itself.
+        For help with playlist download options, users should use
+        the --help-download flag which gets forwarded to the main application.
+        
+    Example:
+        >>> show_help()
+        # Displays formatted help text with usage examples
+    """
+    print_colored("🎵 BeatSaver Playlist Downloader", "96;1")
+    print_colored("=" * 40, "96")
+    print()
+    print("Usage:")
+    print("  ./bsaver-dl playlist.bplist [options]     Download a playlist")
+    print("  python3 bsaver-dl playlist.bplist [options]")
+    print()
+    print("  ./bsaver-dl --install                    Force install/reinstall")
+    print("  ./bsaver-dl --clean                      Clean up virtual environment")
+    print("  ./bsaver-dl --help                       Show this help")
+    print()
+    print("The script automatically installs dependencies on first run.")
+    print("Subsequent runs are instant!")
+    print()
+    print("For playlist download options, run:")
+    print("  ./bsaver-dl --help-download")
+
+
+def main():
+    """Main entry point for the smart bsaver-dl script.
+    
+    Orchestrates the complete workflow including argument parsing, installation
+    management, and command execution. Handles special management commands
+    (install, clean, help) and automatically installs dependencies when needed
+    for regular usage.
+    
+    The function performs the following operations:
+    1. Parse command line arguments to identify management commands
+    2. Handle special commands (install, clean, help) immediately
+    3. Transform help-download requests to regular help requests
+    4. Show help if no arguments provided
+    5. Auto-install if needed for regular commands
+    6. Execute the main application with provided arguments
+    
+    Returns:
+        None
+        
+    Note:
+        This function serves as an intelligent wrapper that provides
+        a seamless user experience by handling installation automatically
+        and providing multiple ways to access help and management functions.
+        
+    Example:
+        Called automatically when script is executed:
+        $ ./bsaver-dl playlist.bplist -v
+        $ ./bsaver-dl --install
+        $ ./bsaver-dl --help
+    """
+    # Parse our special arguments
+    known_args, unknown_args = parse_args()
+    
+    # Handle special commands first
+    if known_args.install:
+        # Show what we're about to do
+        print_colored("🎵 BeatSaver Playlist Downloader", "96;1")
+        print_colored("=" * 40, "96")
+        print()
+        run_installation()
+        print()
+        print_colored("✅ Installation complete!", "92")
+        return
+    
+    if known_args.clean:
+        # Show what we're about to do
+        print_colored("🎵 BeatSaver Playlist Downloader", "96;1")
+        print_colored("=" * 40, "96")
+        print()
+        run_cleanup()
+        print()
+        print_colored("✅ Cleanup complete!", "92")
+        return
+    
+    if known_args.help:
+        show_help()
+        return
+    
+    # Check for help-download (pass through to the actual tool)
+    if "--help-download" in unknown_args:
+        unknown_args.remove("--help-download")
+        unknown_args.append("--help")
+    
+    # If no arguments provided, show our help
+    if not unknown_args:
+        show_help()
+        return
+    
+    # Check if installation is needed (for normal commands)
+    if not check_installation():
+        # Show what we're about to do
+        print_colored("🎵 BeatSaver Playlist Downloader", "96;1")
+        print_colored("=" * 40, "96")
+        print()
+        print_colored("🔧 Virtual environment not found. Installing...", "94")
+        print()
+        
+        # Run installation
+        run_installation()
+        print()
+        print_colored("✅ Installation complete! Running your command...", "92")
+        print()
+    
+    # Run the actual command
+    run_command(unknown_args)
+
+
+if __name__ == "__main__":
+    main() 

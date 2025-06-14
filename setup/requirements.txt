@@ -1,0 +1,8 @@
+# BeatSaver Playlist Downloader Dependencies
+# Rich library for enhanced CLI interface with progress bars and tables
+rich>=13.0.0
+
+# Additional dependencies for development (optional)
+# pytest>=7.0.0  # For testing
+# black>=22.0.0  # For code formatting
+# flake8>=4.0.0  # For linting 
